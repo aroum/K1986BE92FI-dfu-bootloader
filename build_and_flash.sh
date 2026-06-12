@@ -4,7 +4,7 @@ set -euo pipefail
 # --- CONFIG ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
-PROBE_CONFIG="${SCRIPT_DIR}/../../platforms/milandr/dep/probe/jlink4swd.cfg"
+PROBE_CONFIG="${SCRIPT_DIR}/platforms/milandr/dep/probe/jlink4swd.cfg"
 TARGET_NAME="milandr_dfu_bootloader"
 
 RED='\033[0;31m'
