@@ -1,4 +1,4 @@
-name: Build Firmware
+name: Build DFU bootloader & blink example
 
 on:
   push:
@@ -21,12 +21,29 @@ jobs:
 
     - name: Build Bootloader
       run: |
-        if [ -d "milander_bootloader/milandr-dfu-bootloader" ]; then cd milander_bootloader/milandr-dfu-bootloader; fi
         chmod +x ./build_and_flash.sh
         ./build_and_flash.sh --clean
 
     - name: Build Blink Example
       run: |
-        if [ -d "milander_bootloader/milandr-dfu-bootloader" ]; then cd milander_bootloader/milandr-dfu-bootloader; fi
         chmod +x ./example_blink/build_and_flash.sh
         ./example_blink/build_and_flash.sh --clean
+
+    - name: Upload Bootloader Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: bootloader
+        path: |
+          build/milandr_dfu_bootloader.bin
+          build/milandr_dfu_bootloader.hex
+          build/milandr_dfu_bootloader
+
+    - name: Upload Blink Example Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: blink-example
+        path: |
+          example_blink/build/blink.bin
+          example_blink/build/blink.hex
+          example_blink/build/blink
+
