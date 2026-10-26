@@ -43,8 +43,8 @@ static void clock_init(void) {
 }
 
 int main(void) {
-  /* Set Vector Table Offset to point to our application at 0x08002000 */
-  *(volatile uint32_t *)(0xE000ED08) = 0x08002000;
+  /* Set Vector Table Offset to point to our application at 0x08001000 */
+  *(volatile uint32_t *)(0xE000ED08) = 0x08001000;
 
   /* Initialize System Clock */
   clock_init();

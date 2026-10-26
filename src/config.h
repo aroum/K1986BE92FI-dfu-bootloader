@@ -6,7 +6,7 @@
 
 /* Memory configurations */
 #define MEM_FLASH_START          0x08000000
-#define MEM_BOOTLOADER_SIZE      0x00002000  /* 8 KB reserved for bootloader */
+#define MEM_BOOTLOADER_SIZE      0x00001000  /* 4 KB reserved for bootloader (1 flash page) */
 #define MEM_APP_START            (MEM_FLASH_START + MEM_BOOTLOADER_SIZE)
 #define MEM_PAGE_SIZE            0x00001000  /* 4 KB page size for MDR32F9Q2I */
 #define MEM_FLASH_SIZE           0x00020000  /* 128 KB total flash */

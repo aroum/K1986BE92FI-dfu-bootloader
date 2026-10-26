@@ -8,7 +8,7 @@ AS = $(PREFIX)gcc -x assembler-with-cpp
 CP = $(PREFIX)objcopy
 SZ = $(PREFIX)size
 
-# Linker script (custom app offset at 0x08002000)
+# Linker script (custom app offset at 0x08001000)
 LDSCRIPT = MDR32F9Q2I_app.ld
 
 # Optimization, CPU and Definitions
