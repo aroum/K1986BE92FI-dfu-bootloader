@@ -6,7 +6,7 @@ set(DEP_DIR "${PLATFORM_DIR}/dep")
 set(COMMON_DIR "${DEP_DIR}/common")
 set(CMAKE_DIR "${COMMON_DIR}/cmake")
 
-# Always use custom app linker script at 0x08002000
+# Always use custom app linker script at 0x08001000
 set(LINKER_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/MDR32F9Q2I_app.ld")
 
 # Include toolchain settings

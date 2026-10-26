@@ -43,8 +43,8 @@ static void clock_init(void) {
 }
 
 int main(void) {
-  /* Set Vector Table Offset to point to our application at 0x08002000 */
-  *(volatile uint32_t *)(0xE000ED08) = 0x08002000;
+  /* Set Vector Table Offset to point to our application at 0x08001000 */
+  *(volatile uint32_t *)(0xE000ED08) = 0x08001000;
 
   /* Initialize System Clock */
   clock_init();
@@ -63,11 +63,11 @@ int main(void) {
   PORT_Init(MDR_PORTB, &PORT_InitStructure);
 
   while (1) {
-    /* Toggle LED PB7 */
+    /* Toggle LED PB7 with 2-second period (1 s ON, 1 s OFF) */
     PORT_SetBits(MDR_PORTB, PORT_Pin_7);
-    delay_us(500000); /* 500 ms */
+    delay_us(1000000); /* 1000 ms */
 
     PORT_ResetBits(MDR_PORTB, PORT_Pin_7);
-    delay_us(500000); /* 500 ms */
+    delay_us(1000000); /* 1000 ms */
   }
 }

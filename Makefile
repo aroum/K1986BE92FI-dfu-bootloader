@@ -13,19 +13,14 @@ LDSCRIPT = MDR32F9Q2I_bootloader.ld
 
 # Optimization and CPU flags
 MCU = -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-OPT ?= -O2
+OPT ?= -Os -flto
 
 # C sources
 C_SOURCES = \
 src/main.c \
 src/flash.c \
 src/usb_dfu.c \
-platforms/milandr/dep/common/src/board_usb.c \
-platforms/milandr/dep/common/Drivers/CMSIS/DeviceSupport/startup/system_K1986VE9xI.c \
-platforms/milandr/dep/common/Drivers/SPL/src/MDR32FxQI_rst_clk.c \
 platforms/milandr/dep/common/Drivers/SPL/src/MDR32FxQI_eeprom.c \
-platforms/milandr/dep/common/Drivers/SPL/src/MDR32FxQI_bkp.c \
-platforms/milandr/dep/common/Drivers/SPL/src/MDR32FxQI_port.c \
 platforms/milandr/dep/common/Drivers/SPL/src/MDR32FxQI_usb.c \
 platforms/milandr/dep/common/Drivers/SPL/src/USB_Library/MDR32FxQI_usb_device.c
 
@@ -60,7 +55,7 @@ CFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -Wextra \
 ASFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -MMD -MP
 
 # Linker flags
-LDFLAGS = $(MCU) -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
+LDFLAGS = $(MCU) -flto -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections \
           -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 
