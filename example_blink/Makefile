@@ -13,7 +13,7 @@ LDSCRIPT = MDR32F9Q2I_app.ld
 
 # Optimization, CPU and Definitions
 MCU = -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-OPT ?= -O2
+OPT ?= -Os -flto
 DEFS = -DMCU_milandr
 
 PLATFORM_DIR = ../platforms/milandr
@@ -62,7 +62,7 @@ CFLAGS = $(MCU) $(DEFS) $(C_INCLUDES) $(OPT) -Wall -Wextra \
 ASFLAGS = $(MCU) $(DEFS) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -MMD -MP
 
 # Linker flags
-LDFLAGS = $(MCU) -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
+LDFLAGS = $(MCU) -flto -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections \
           -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 

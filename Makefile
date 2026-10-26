@@ -13,7 +13,7 @@ LDSCRIPT = MDR32F9Q2I_bootloader.ld
 
 # Optimization and CPU flags
 MCU = -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-OPT ?= -O2
+OPT ?= -Os -flto
 
 # C sources
 C_SOURCES = \
@@ -60,7 +60,7 @@ CFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -Wextra \
 ASFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -MMD -MP
 
 # Linker flags
-LDFLAGS = $(MCU) -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
+LDFLAGS = $(MCU) -flto -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections \
           -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 
