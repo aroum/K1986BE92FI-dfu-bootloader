@@ -35,7 +35,6 @@ set(SOURCES
     src/main.c
     src/flash.c
     src/usb_dfu.c
-    "${COMMON_DIR}/src/board_usb.c"
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -46,7 +45,8 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     -mthumb
     -Wall
     -Wextra
-    -O2
+    -Os
+    -flto
     -ffunction-sections
     -fdata-sections
     -Wno-unused-parameter
@@ -57,6 +57,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 target_link_options(${PROJECT_NAME} PRIVATE
     -mcpu=cortex-m3
     -mthumb
+    -flto
     -Wl,--gc-sections
     -Wl,-Map=${PROJECT_NAME}.map
     --specs=nano.specs

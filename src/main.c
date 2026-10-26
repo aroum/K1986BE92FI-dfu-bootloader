@@ -9,6 +9,10 @@
 #include "usb_dfu.h"
 #include <stdint.h>
 
+/* Stub out static C++ constructors to save flash space */
+void __libc_init_array(void) {
+}
+
 /* Simple software delay in microseconds */
 static void delay_us(uint32_t us) {
   for (volatile uint32_t i = 0; i < us * 8; i++) {
@@ -18,39 +22,41 @@ static void delay_us(uint32_t us) {
 
 /* System Clock Initialization to 80 MHz */
 static void clock_init(void) {
-  RST_CLK_DeInit();
-  SystemCoreClockUpdate();
-
-  RST_CLK_HSEconfig(RST_CLK_HSE_ON);
-  while (RST_CLK_HSEstatus() == ERROR) {
+  /* Turn on HSE oscillator (8 MHz external crystal) */
+  MDR_RST_CLK->HS_CONTROL |= RST_CLK_HSE_ON;
+  while ((MDR_RST_CLK->CLOCK_STATUS & RST_CLK_CLOCK_STATUS_HSE_RDY) == 0) {
   }
 
   /* CPU PLL clock: 8 MHz * 10 = 80 MHz */
-  RST_CLK_CPU_PLLconfig(RST_CLK_CPU_PLLsrcHSEdiv1, RST_CLK_CPU_PLLmul10);
-  RST_CLK_CPU_PLLcmd(ENABLE);
-  while (RST_CLK_CPU_PLLstatus() == ERROR) {
+  /* Select HSE as CPU_PLL source (CPU_C1 = HSE) */
+  MDR_RST_CLK->CPU_CLOCK = (MDR_RST_CLK->CPU_CLOCK & ~3) | 0x02;
+  /* Set CPU PLL multiplier: 10 (multiplier value in register is mul - 1 = 9) */
+  MDR_RST_CLK->PLL_CONTROL = (MDR_RST_CLK->PLL_CONTROL & ~0x0F00) | (9 << 8);
+  /* Enable CPU PLL */
+  MDR_RST_CLK->PLL_CONTROL |= RST_CLK_PLL_CONTROL_PLL_CPU_ON;
+  while ((MDR_RST_CLK->CLOCK_STATUS & RST_CLK_CLOCK_STATUS_PLL_CPU_RDY) == 0) {
   }
 
-  RST_CLK_CPU_PLLuse(ENABLE);
-  RST_CLK_CPUclkPrescaler(RST_CLK_CPUclkDIV1);
+  /* Enable CPU PLL output (CPU_C2 = PLL) and set prescaler to div1 (CPU_C3 = CPU_C2) */
+  MDR_RST_CLK->CPU_CLOCK |= (1 << 2);
 
   /* EEPROM Latency 3 (for CPU frequency up to 80 MHz) */
-  RST_CLK_PCLKcmd(RST_CLK_PCLK_EEPROM, ENABLE);
-  EEPROM_SetLatency(EEPROM_Latency_3);
-  RST_CLK_PCLKcmd(RST_CLK_PCLK_EEPROM, DISABLE);
+  MDR_RST_CLK->PER_CLOCK |= RST_CLK_PCLK_EEPROM;
+  MDR_EEPROM->CMD = EEPROM_Latency_3;
 
-  /* Backup domain configuration */
-  RST_CLK_PCLKcmd(RST_CLK_PCLK_BKP, ENABLE);
-  BKP_DUccMode(BKP_DUcc_upto_80MHz);
+  /* Backup domain configuration (DUcc mode up to 80 MHz) */
+  MDR_RST_CLK->PER_CLOCK |= RST_CLK_PCLK_BKP;
+  MDR_BKP->REG_0E = (MDR_BKP->REG_0E & ~(BKP_REG_0E_SELECTRI_Msk | BKP_REG_0E_LOW_Msk)) |
+                    (6 | (6 << BKP_REG_0E_SELECTRI_Pos));
 
-  RST_CLK_CPUclkSelection(RST_CLK_CPUclkCPU_C3);
-  SystemCoreClockUpdate();
+  /* Switch CPU clock to CPU_C3 */
+  MDR_RST_CLK->CPU_CLOCK = (MDR_RST_CLK->CPU_CLOCK & ~0x0300) | (1 << 8);
 }
 
 /* USB Peripheral Clock and Init */
 static void usb_clock_init(void) {
   /* Enable USB Clock */
-  RST_CLK_PCLKcmd(RST_CLK_PCLK_USB, ENABLE);
+  MDR_RST_CLK->PER_CLOCK |= RST_CLK_PCLK_USB;
 
   USB_Clock_TypeDef USB_Clock_InitStruct;
   USB_DeviceBUSParam_TypeDef USB_DeviceBUSParam;
@@ -97,8 +103,8 @@ static void jump_to_app(void) {
 
   __disable_irq();
 
-  /* Disable PORT clocks to cleanup peripheral state */
-  RST_CLK_PCLKcmd(RST_CLK_PCLK_PORTB, DISABLE);
+  /* Disable PORTB clock to cleanup peripheral state */
+  MDR_RST_CLK->PER_CLOCK &= ~RST_CLK_PCLK_PORTB;
 
   /* Set Vector Table Offset Register (VTOR) */
   *(volatile uint32_t *)(0xE000ED08) = MEM_APP_START;
@@ -111,32 +117,25 @@ static void jump_to_app(void) {
 
 int main(void) {
   /* Enable PORTB Clock for Button (PB6) and LED (PB7) */
-  RST_CLK_PCLKcmd(DFU_BTN_PCLK, ENABLE);
+  MDR_RST_CLK->PER_CLOCK |= DFU_BTN_PCLK;
 
-  /* Configure DFU Button pin (PB6) as Input */
-  PORT_InitTypeDef PORT_InitStructure;
-  PORT_StructInit(&PORT_InitStructure);
-  PORT_InitStructure.PORT_Pin = DFU_BTN_PIN;
-  PORT_InitStructure.PORT_OE = PORT_OE_IN;
-  PORT_InitStructure.PORT_FUNC = PORT_FUNC_PORT;
-  PORT_InitStructure.PORT_MODE = PORT_MODE_DIGITAL;
-  PORT_InitStructure.PORT_SPEED = PORT_SPEED_SLOW;
+  /* Configure DFU Button pin (PB6) as Digital Input */
+  DFU_BTN_PORT->ANALOG |= DFU_BTN_PIN;
+  DFU_BTN_PORT->OE &= ~DFU_BTN_PIN;
 #if DFU_BTN_ACTIVE_LOW
-  PORT_InitStructure.PORT_PULL_UP = PORT_PULL_UP_ON;
+  DFU_BTN_PORT->PULL |= (DFU_BTN_PIN << 16); /* Pull-up */
 #else
-  PORT_InitStructure.PORT_PULL_DOWN = PORT_PULL_DOWN_ON;
+  DFU_BTN_PORT->PULL |= DFU_BTN_PIN;         /* Pull-down */
 #endif
-  PORT_Init(DFU_BTN_PORT, &PORT_InitStructure);
 
   /* Small stabilization delay */
   delay_us(10000);
 
   /* Read the button state */
-  uint8_t btn_pressed = 0;
 #if DFU_BTN_ACTIVE_LOW
-  btn_pressed = (PORT_ReadInputDataBit(DFU_BTN_PORT, DFU_BTN_PIN) == 0);
+  uint8_t btn_pressed = ((DFU_BTN_PORT->RXTX & DFU_BTN_PIN) == 0);
 #else
-  btn_pressed = (PORT_ReadInputDataBit(DFU_BTN_PORT, DFU_BTN_PIN) != 0);
+  uint8_t btn_pressed = ((DFU_BTN_PORT->RXTX & DFU_BTN_PIN) != 0);
 #endif
 
   /* Check DFU entry conditions */
@@ -154,36 +153,19 @@ int main(void) {
     jump_to_app();
   }
 
-  /* Configure DFU Status LED pin (PB7) as Output */
-  PORT_StructInit(&PORT_InitStructure);
-  PORT_InitStructure.PORT_Pin = DFU_LED_PIN;
-  PORT_InitStructure.PORT_OE = PORT_OE_OUT;
-  PORT_InitStructure.PORT_FUNC = PORT_FUNC_PORT;
-  PORT_InitStructure.PORT_MODE = PORT_MODE_DIGITAL;
-  PORT_InitStructure.PORT_SPEED = PORT_SPEED_SLOW;
-  PORT_Init(DFU_LED_PORT, &PORT_InitStructure);
+  /* Configure DFU Status LED pin (PB7) as Digital Output */
+  DFU_LED_PORT->ANALOG |= DFU_LED_PIN;
+  DFU_LED_PORT->OE |= DFU_LED_PIN;
 
   /* Turn on/off LED initially */
 #if DFU_LED_ACTIVE_HIGH
-  PORT_SetBits(DFU_LED_PORT, DFU_LED_PIN);
+  DFU_LED_PORT->RXTX |= DFU_LED_PIN;
 #else
-  PORT_ResetBits(DFU_LED_PORT, DFU_LED_PIN);
+  DFU_LED_PORT->RXTX &= ~DFU_LED_PIN;
 #endif
 
   /* Initialize System and USB Clock */
   clock_init();
-
-  /* Re-enable PORT clock for LED after clock_init() resets peripheral clocks */
-  RST_CLK_PCLKcmd(DFU_BTN_PCLK, ENABLE);
-
-  /* Re-initialize LED pin configuration */
-  PORT_StructInit(&PORT_InitStructure);
-  PORT_InitStructure.PORT_Pin = DFU_LED_PIN;
-  PORT_InitStructure.PORT_OE = PORT_OE_OUT;
-  PORT_InitStructure.PORT_FUNC = PORT_FUNC_PORT;
-  PORT_InitStructure.PORT_MODE = PORT_MODE_DIGITAL;
-  PORT_InitStructure.PORT_SPEED = PORT_SPEED_SLOW;
-  PORT_Init(DFU_LED_PORT, &PORT_InitStructure);
 
   flash_init();
   USB_DFU_Init();
@@ -193,12 +175,10 @@ int main(void) {
   __enable_irq();
 
   uint32_t blink_counter = 0;
-  uint8_t led_state = 1;
 
   while (1) {
     if (dfu_reset_pending) {
-      delay_us(200000); /* Wait 200 ms for USB reset handshake to complete on
-                           host side */
+      delay_us(200000); /* Wait 200 ms for USB reset handshake to complete on host side */
       NVIC_SystemReset();
     }
 
@@ -206,21 +186,7 @@ int main(void) {
     blink_counter++;
     if (blink_counter >= 150) {
       blink_counter = 0;
-      led_state = !led_state;
-
-      if (led_state) {
-#if DFU_LED_ACTIVE_HIGH
-        PORT_SetBits(DFU_LED_PORT, DFU_LED_PIN);
-#else
-        PORT_ResetBits(DFU_LED_PORT, DFU_LED_PIN);
-#endif
-      } else {
-#if DFU_LED_ACTIVE_HIGH
-        PORT_ResetBits(DFU_LED_PORT, DFU_LED_PIN);
-#else
-        PORT_SetBits(DFU_LED_PORT, DFU_LED_PIN);
-#endif
-      }
+      DFU_LED_PORT->RXTX ^= DFU_LED_PIN;
     }
   }
 }
