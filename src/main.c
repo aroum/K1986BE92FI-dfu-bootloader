@@ -9,6 +9,10 @@
 #include "usb_dfu.h"
 #include <stdint.h>
 
+/* Minimal SystemInit: MCU registers are already at reset defaults */
+void SystemInit(void) {
+}
+
 /* Stub out static C++ constructors to save flash space */
 void __libc_init_array(void) {
 }

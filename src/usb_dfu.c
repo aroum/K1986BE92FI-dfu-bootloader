@@ -1,7 +1,6 @@
 #include "usb_dfu.h"
 #include "config.h"
 #include "flash.h"
-#include <string.h>
 
 /* USB DFU State variables */
 static volatile uint8_t  dfu_state = STATE_DFU_IDLE;
@@ -101,12 +100,22 @@ static const uint8_t Usb_Dfu_String_Interface[] = {
     'I', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0
 };
 
+static const uint8_t * const Usb_Dfu_Strings[] = {
+    Usb_Dfu_String_LangID,
+    Usb_Dfu_String_Manuf,
+    Usb_Dfu_String_Prod,
+    Usb_Dfu_String_Serial,
+    Usb_Dfu_String_Interface,
+};
+
 /* Helper function to program the received buffer to internal flash */
 static void write_buffer_to_flash(uint32_t address, const uint8_t *buffer, uint32_t length) {
     for (uint32_t i = 0; i < length; i += 4) {
         uint32_t word = 0xFFFFFFFF;
         uint32_t bytes_to_copy = (length - i >= 4) ? 4 : (length - i);
-        memcpy(&word, &buffer[i], bytes_to_copy);
+        for (uint32_t b = 0; b < bytes_to_copy; b++) {
+            ((uint8_t *)&word)[b] = buffer[i + b];
+        }
 
         /* Erase page if the address is aligned to the page boundary */
         if ((address & (MEM_PAGE_SIZE - 1)) == 0) {
@@ -178,30 +187,11 @@ USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLEN
             break;
 
         case USB_STRING:
-            switch (descIndex) {
-                case 0:
-                    pDescr = Usb_Dfu_String_LangID;
-                    length = sizeof(Usb_Dfu_String_LangID);
-                    break;
-                case 1:
-                    pDescr = Usb_Dfu_String_Manuf;
-                    length = sizeof(Usb_Dfu_String_Manuf);
-                    break;
-                case 2:
-                    pDescr = Usb_Dfu_String_Prod;
-                    length = sizeof(Usb_Dfu_String_Prod);
-                    break;
-                case 3:
-                    pDescr = Usb_Dfu_String_Serial;
-                    length = sizeof(Usb_Dfu_String_Serial);
-                    break;
-                case 4:
-                    pDescr = Usb_Dfu_String_Interface;
-                    length = sizeof(Usb_Dfu_String_Interface);
-                    break;
-                default:
-                    result = USB_ERROR;
-                    break;
+            if (descIndex < sizeof(Usb_Dfu_Strings) / sizeof(Usb_Dfu_Strings[0])) {
+                pDescr = Usb_Dfu_Strings[descIndex];
+                length = pDescr[0];
+            } else {
+                result = USB_ERROR;
             }
             break;
 

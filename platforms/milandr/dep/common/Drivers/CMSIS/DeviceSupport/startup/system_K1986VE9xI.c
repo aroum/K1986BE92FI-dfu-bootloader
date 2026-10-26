@@ -169,7 +169,7 @@ void SystemCoreClockUpdate(void)
   * @param  None
   * @retval None
   */
-void SystemInit(void)
+__attribute__((weak)) void SystemInit(void)
 {
 #if defined(FACTORY_DATA_SYSTEM_INIT) && (FACTORY_DATA_SYSTEM_INIT == 1)
     uint32_t i;

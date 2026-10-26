@@ -20,7 +20,6 @@ C_SOURCES = \
 src/main.c \
 src/flash.c \
 src/usb_dfu.c \
-platforms/milandr/dep/common/Drivers/CMSIS/DeviceSupport/startup/system_K1986VE9xI.c \
 platforms/milandr/dep/common/Drivers/SPL/src/MDR32FxQI_eeprom.c \
 platforms/milandr/dep/common/Drivers/SPL/src/MDR32FxQI_usb.c \
 platforms/milandr/dep/common/Drivers/SPL/src/USB_Library/MDR32FxQI_usb_device.c
