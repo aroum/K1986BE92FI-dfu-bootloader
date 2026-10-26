@@ -13,13 +13,15 @@
 
 /* GPIO Configuration for DFU activation button (PB6) */
 #define DFU_BTN_PORT             MDR_PORTB
-#define DFU_BTN_PIN              PORT_Pin_6
+#define DFU_BTN_PIN_POS          6
+#define DFU_BTN_PIN              (1 << DFU_BTN_PIN_POS)
 #define DFU_BTN_PCLK             RST_CLK_PCLK_PORTB
 #define DFU_BTN_ACTIVE_LOW       1           /* 1 = button active low (pull-up), 0 = active high (pull-down) */
 
 /* GPIO Configuration for DFU status LED (PB7) */
 #define DFU_LED_PORT             MDR_PORTB
-#define DFU_LED_PIN              PORT_Pin_7
+#define DFU_LED_PIN_POS          7
+#define DFU_LED_PIN              (1 << DFU_LED_PIN_POS)
 #define DFU_LED_PCLK             RST_CLK_PCLK_PORTB
 #define DFU_LED_ACTIVE_HIGH      1           /* 1 = high turns on LED, 0 = low turns on LED */
 

@@ -157,9 +157,11 @@ int main(void) {
     jump_to_app();
   }
 
-  /* Configure DFU Status LED pin (PB7) as Digital Output */
+  /* Configure DFU Status LED pin as Digital Output with Slow speed */
   DFU_LED_PORT->ANALOG |= DFU_LED_PIN;
   DFU_LED_PORT->OE |= DFU_LED_PIN;
+  DFU_LED_PORT->PWR = (DFU_LED_PORT->PWR & ~(3 << (DFU_LED_PIN_POS * 2))) |
+                      (1 << (DFU_LED_PIN_POS * 2)); /* Slow speed driver */
 
   /* Turn on/off LED initially */
 #if DFU_LED_ACTIVE_HIGH
