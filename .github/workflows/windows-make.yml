@@ -1,0 +1,63 @@
+name: Windows Make Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-windows-make:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Arm GNU Toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+
+      - name: Install Make
+        run: |
+          choco install make --no-progress
+
+      - name: Verify toolchain versions
+        run: |
+          arm-none-eabi-gcc --version
+          make --version
+
+      - name: Build Bootloader (Make)
+        run: |
+          make clean
+          make
+
+      - name: Build Blink Example (Make)
+        run: |
+          make -C example_blink clean
+          make -C example_blink
+
+      - name: Verify artifacts
+        run: |
+          ls -la build/milandr_dfu_bootloader.*
+          ls -la example_blink/build/blink.*
+
+      - name: Upload Bootloader Artifacts (Windows Make)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootloader-windows-make
+          path: |
+            build/milandr_dfu_bootloader.bin
+            build/milandr_dfu_bootloader.hex
+            build/milandr_dfu_bootloader.elf
+
+      - name: Upload Blink Example Artifacts (Windows Make)
+        uses: actions/upload-artifact@v4
+        with:
+          name: blink-example-windows-make
+          path: |
+            example_blink/build/blink.bin
+            example_blink/build/blink.hex
+            example_blink/build/blink.elf

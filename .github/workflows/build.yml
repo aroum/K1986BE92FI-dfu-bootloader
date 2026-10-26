@@ -29,6 +29,12 @@ jobs:
         chmod +x ./example_blink/build_and_flash.sh
         ./example_blink/build_and_flash.sh --clean
 
+    - name: Test Make build (Bootloader & Blink)
+      run: |
+        make clean-all
+        make
+        make blink
+
     - name: Upload Bootloader Artifacts
       uses: actions/upload-artifact@v4
       with:
