@@ -63,11 +63,11 @@ int main(void) {
   PORT_Init(MDR_PORTB, &PORT_InitStructure);
 
   while (1) {
-    /* Toggle LED PB7 */
+    /* Toggle LED PB7 with 2-second period (1 s ON, 1 s OFF) */
     PORT_SetBits(MDR_PORTB, PORT_Pin_7);
-    delay_us(500000); /* 500 ms */
+    delay_us(1000000); /* 1000 ms */
 
     PORT_ResetBits(MDR_PORTB, PORT_Pin_7);
-    delay_us(500000); /* 500 ms */
+    delay_us(1000000); /* 1000 ms */
   }
 }
