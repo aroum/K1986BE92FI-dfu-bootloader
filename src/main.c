@@ -89,12 +89,12 @@ static int app_is_valid(void) {
   uint32_t sp = *(volatile uint32_t *)MEM_APP_START;
   uint32_t pc = *(volatile uint32_t *)(MEM_APP_START + 4);
 
-  /* Check if stack pointer is within RAM range */
-  if ((sp & 0xFFE00000) != 0x20000000) {
+  /* Check if stack pointer is within 32 KB RAM range and 4-byte aligned */
+  if (sp <= 0x20000000 || sp > (0x20000000 + 32 * 1024) || (sp & 3) != 0) {
     return 0;
   }
-  /* Check if Reset Handler address points to Flash memory */
-  if ((pc & 0xFF000000) != 0x08000000) {
+  /* Check if Reset Handler has Thumb bit set and is within application Flash range */
+  if ((pc & 1) == 0 || pc < MEM_APP_START || pc >= (MEM_FLASH_START + MEM_FLASH_SIZE)) {
     return 0;
   }
   return 1;
@@ -105,7 +105,10 @@ static void jump_to_app(void) {
   uint32_t app_sp = *(volatile uint32_t *)MEM_APP_START;
   uint32_t app_pc = *(volatile uint32_t *)(MEM_APP_START + 4);
 
-  __disable_irq();
+  /* Reset PORTB pin configuration used by bootloader */
+  DFU_BTN_PORT->ANALOG &= ~(DFU_BTN_PIN | DFU_LED_PIN);
+  DFU_BTN_PORT->PULL &= ~((DFU_BTN_PIN << 16) | DFU_BTN_PIN | (DFU_LED_PIN << 16) | DFU_LED_PIN);
+  DFU_BTN_PORT->OE &= ~(DFU_BTN_PIN | DFU_LED_PIN);
 
   /* Disable PORTB clock to cleanup peripheral state */
   MDR_RST_CLK->PER_CLOCK &= ~RST_CLK_PCLK_PORTB;
@@ -113,10 +116,18 @@ static void jump_to_app(void) {
   /* Set Vector Table Offset Register (VTOR) */
   *(volatile uint32_t *)(0xE000ED08) = MEM_APP_START;
 
-  /* Set Stack Pointer and jump */
-  __set_MSP(app_sp);
-  void (*app_reset)(void) = (void (*)(void))app_pc;
-  app_reset();
+  /* Ensure interrupts are enabled and jump to application */
+  __asm volatile (
+    "cpsie i\n"
+    "msr   msp, %0\n"
+    "bx    %1\n"
+    :
+    : "r" (app_sp), "r" (app_pc)
+    : "memory"
+  );
+
+  while (1) {
+  }
 }
 
 int main(void) {
@@ -133,7 +144,7 @@ int main(void) {
 #endif
 
   /* Small stabilization delay */
-  delay_us(10000);
+  delay_us(100);
 
   /* Read the button state */
 #if DFU_BTN_ACTIVE_LOW
@@ -185,6 +196,8 @@ int main(void) {
   while (1) {
     if (dfu_reset_pending) {
       delay_us(200000); /* Wait 200 ms for USB reset handshake to complete on host side */
+      USB_DevicePowerOff();
+      delay_us(10000);
       NVIC_SystemReset();
     }
 

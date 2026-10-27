@@ -171,8 +171,10 @@ extern "C" {
 // </h>
 
 // <o> EEPROM controller freq [MHz]
- //<i> Default: 8MHz
-#define FLASH_PROG_FREQ_MHZ     (8.0)
+ //<i> Default: 80MHz for 80 MHz system core clock
+#ifndef FLASH_PROG_FREQ_MHZ
+#define FLASH_PROG_FREQ_MHZ     (80.0)
+#endif
 // </h>
 
 

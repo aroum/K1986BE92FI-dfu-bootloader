@@ -8,7 +8,7 @@ MEMORY
   RAM(xrw)  : ORIGIN = 0x20000000, LENGTH = 32K
 }
 
-_estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
+_estack = ORIGIN(RAM) + LENGTH(RAM) - 16;    /* end of RAM minus 16 bytes reserved for reboot magic */
 _Min_Heap_Size = 0x200;
 _Min_Stack_Size = 0x400;
 

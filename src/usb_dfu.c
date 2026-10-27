@@ -58,7 +58,7 @@ static const uint8_t Usb_Dfu_Config_Descriptor[27] = {
     /* DFU Functional Descriptor (9 bytes) */
     0x09,                  /* bLength */
     0x21,                  /* bDescriptorType (DFU Functional) */
-    0x03,                  /* bmAttributes (Can download, Will detach) */
+    0x09,                  /* bmAttributes (Can download, Will detach) */
     0xFF, 0x00,            /* wDetachTimeout (255 ms) */
     (uint8_t)(DFU_TRANSFER_SIZE & 0xFF),
     (uint8_t)((DFU_TRANSFER_SIZE >> 8) & 0xFF), /* wTransferSize */
@@ -132,6 +132,11 @@ static USB_Result DFU_OnDataReceived(USB_EP_TypeDef EPx, uint8_t* Buffer, uint32
     (void)Buffer;
 
     if (Length > 0) {
+        if (dfu_address < MEM_APP_START || (dfu_address + Length) > (MEM_FLASH_START + MEM_FLASH_SIZE)) {
+            dfu_status = DFU_STATUS_ERR_ADDRESS;
+            dfu_state = STATE_DFU_ERROR;
+            return USB_ERROR;
+        }
         write_buffer_to_flash(dfu_address, dfu_rx_buffer, Length);
         dfu_address += Length;
     }
@@ -148,7 +153,7 @@ void USB_DFU_Init(void) {
 }
 
 USB_Result USB_DFU_Reset(void) {
-    if (dfu_state == STATE_DFU_MANIFEST_WAIT_RESET) {
+    if (dfu_state == STATE_DFU_MANIFEST_WAIT_RESET || dfu_state == STATE_DFU_MANIFEST_SYNC) {
         dfu_reset_pending = 1;
     }
 
@@ -216,9 +221,17 @@ USB_Result USB_DFU_ClassRequest(void) {
     static uint8_t status_response[6];
 
     switch (USB_CurrentSetupPacket.bRequest) {
+        case DFU_DETACH:
+            dfu_reset_pending = 1;
+            /* Send ZLP acknowledge */
+            result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
+            break;
+
         case DFU_DNLOAD:
             if (wLength > 0) {
-                if (wLength > DFU_TRANSFER_SIZE) {
+                if (wLength > DFU_TRANSFER_SIZE ||
+                    dfu_address < MEM_APP_START ||
+                    (dfu_address + wLength) > (MEM_FLASH_START + MEM_FLASH_SIZE)) {
                     dfu_status = DFU_STATUS_ERR_ADDRESS;
                     dfu_state = STATE_DFU_ERROR;
                     result = USB_ERROR;
@@ -235,19 +248,20 @@ USB_Result USB_DFU_ClassRequest(void) {
             break;
 
         case DFU_GETSTATUS:
+            /* Handle State transitions when host reads status */
+            if (dfu_state == STATE_DFU_DNLOAD_SYNC) {
+                dfu_state = STATE_DFU_DNLOAD_IDLE;
+            } else if (dfu_state == STATE_DFU_MANIFEST_SYNC) {
+                dfu_state = STATE_DFU_MANIFEST_WAIT_RESET;
+                dfu_reset_pending = 1;
+            }
+
             status_response[0] = dfu_status;
             status_response[1] = 0; /* Poll Timeout LSB */
             status_response[2] = 0;
             status_response[3] = 0; /* Poll Timeout MSB */
             status_response[4] = dfu_state;
             status_response[5] = 0; /* iString */
-
-            /* Handle State transitions when host reads status */
-            if (dfu_state == STATE_DFU_DNLOAD_SYNC) {
-                dfu_state = STATE_DFU_DNLOAD_IDLE;
-            } else if (dfu_state == STATE_DFU_MANIFEST_SYNC) {
-                dfu_state = STATE_DFU_MANIFEST_WAIT_RESET;
-            }
 
             result = USB_EP_doDataIn(USB_EP0, status_response, 6, USB_DeviceDoStatusOutAck);
             break;
