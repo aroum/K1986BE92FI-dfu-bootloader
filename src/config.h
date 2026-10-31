@@ -10,6 +10,7 @@
 #define MEM_APP_START            (MEM_FLASH_START + MEM_BOOTLOADER_SIZE)
 #define MEM_PAGE_SIZE            0x00001000  /* 4 KB page size for MDR32F9Q2I */
 #define MEM_FLASH_SIZE           0x00020000  /* 128 KB total flash */
+#define MEM_INFO_SIZE            0x00001000  /* 4 KB Information EEPROM size */
 
 /* GPIO Configuration for DFU activation button (PB6) */
 #define DFU_BTN_PORT             MDR_PORTB

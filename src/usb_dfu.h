@@ -47,10 +47,13 @@
 /* DFU Interface Functions */
 void USB_DFU_Init(void);
 USB_Result USB_DFU_Reset(void);
+USB_Result USB_DFU_SetupPacket(USB_EP_TypeDef EPx, const USB_SetupPacket_TypeDef* p);
 USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLENGTH);
 USB_Result USB_DFU_ClassRequest(void);
 USB_Result USB_DFU_VendorRequest(void);
 USB_Result USB_DFU_SetConfiguration(uint16_t wValue);
+USB_Result USB_DFU_SetInterface(uint16_t wValue, uint16_t wIndex);
+uint8_t    USB_DFU_GetInterface(uint16_t wIndex);
 uint8_t USB_DFU_GetState(void);
 
 extern volatile uint8_t dfu_reset_pending;

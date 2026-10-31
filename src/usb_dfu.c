@@ -6,6 +6,7 @@
 static volatile uint8_t  dfu_state = STATE_DFU_IDLE;
 static uint8_t  dfu_status = DFU_STATUS_OK;
 static uint32_t dfu_address = MEM_APP_START;
+static uint8_t  dfu_alt = 0;
 volatile uint8_t dfu_reset_pending = 0;
 
 static uint8_t  dfu_rx_buffer[DFU_TRANSFER_SIZE];
@@ -103,19 +104,19 @@ static const uint8_t Usb_Dfu_Ms_Os_20_Descriptor[DESCR_SIZE_MS_OS_20_DESC] = {
     0,0, 0,0
 };
 
-/* Configuration Descriptor (Config + Interface + DFU Functional) */
-static const uint8_t Usb_Dfu_Config_Descriptor[27] = {
+/* Configuration Descriptor (Config + 2 Interfaces + DFU Functional = 36 bytes) */
+static const uint8_t Usb_Dfu_Config_Descriptor[36] = {
     /* Configuration Descriptor (9 bytes) */
     0x09,                  /* bLength */
     0x02,                  /* bDescriptorType (Configuration) */
-    27, 0x00,              /* wTotalLength (27 bytes) */
+    36, 0x00,              /* wTotalLength (36 bytes) */
     0x01,                  /* bNumInterfaces */
     0x01,                  /* bConfigurationValue */
     0x00,                  /* iConfiguration */
     0x80,                  /* bmAttributes (Bus Powered) */
     50,                    /* bMaxPower (100 mA) */
 
-    /* Interface Descriptor (9 bytes) */
+    /* Interface Descriptor Alt 0: Internal FLASH (9 bytes) */
     0x09,                  /* bLength */
     0x04,                  /* bDescriptorType (Interface) */
     0x00,                  /* bInterfaceNumber */
@@ -124,7 +125,18 @@ static const uint8_t Usb_Dfu_Config_Descriptor[27] = {
     0xFE,                  /* bInterfaceClass (Application Specific Class) */
     0x01,                  /* bInterfaceSubClass (DFU) */
     0x02,                  /* bInterfaceProtocol (DFU mode) */
-    0x04,                  /* iInterface (String 4) */
+    0x04,                  /* iInterface (String 4: Internal FLASH) */
+
+    /* Interface Descriptor Alt 1: Internal EEPROM (9 bytes) */
+    0x09,                  /* bLength */
+    0x04,                  /* bDescriptorType (Interface) */
+    0x00,                  /* bInterfaceNumber */
+    0x01,                  /* bAlternateSetting */
+    0x00,                  /* bNumEndpoints */
+    0xFE,                  /* bInterfaceClass (Application Specific Class) */
+    0x01,                  /* bInterfaceSubClass (DFU) */
+    0x02,                  /* bInterfaceProtocol (DFU mode) */
+    0x05,                  /* iInterface (String 5: Internal EEPROM) */
 
     /* DFU Functional Descriptor (9 bytes) */
     0x09,                  /* bLength */
@@ -149,12 +161,11 @@ static const uint8_t Usb_Dfu_String_Manuf[] = {
     'M', 0, 'i', 0, 'l', 0, 'a', 0, 'n', 0, 'd', 0, 'r', 0
 };
 
-/* String Descriptor 2 (Product) - "Milandr DFU Bootloader" in UTF-16LE */
+/* String Descriptor 2 (Product) - "MDR32 DFU" in UTF-16LE */
 static const uint8_t Usb_Dfu_String_Prod[] = {
-    46, 0x03,
-    'M', 0, 'i', 0, 'l', 0, 'a', 0, 'n', 0, 'd', 0, 'r', 0, ' ', 0,
-    'D', 0, 'F', 0, 'U', 0, ' ', 0,
-    'B', 0, 'o', 0, 'o', 0, 't', 0, 'l', 0, 'o', 0, 'a', 0, 'd', 0, 'e', 0, 'r', 0
+    20, 0x03,
+    'M', 0, 'D', 0, 'R', 0, '3', 0, '2', 0, ' ', 0,
+    'D', 0, 'F', 0, 'U', 0
 };
 
 /* String Descriptor 3 (Serial) - "MDR32-DFU" in UTF-16LE */
@@ -163,11 +174,18 @@ static const uint8_t Usb_Dfu_String_Serial[] = {
     'M', 0, 'D', 0, 'R', 0, '3', 0, '2', 0, '-', 0, 'D', 0, 'F', 0, 'U', 0
 };
 
-/* String Descriptor 4 (Interface) - "Internal FLASH" in UTF-16LE */
-static const uint8_t Usb_Dfu_String_Interface[] = {
+/* String Descriptor 4 (Interface 0) - "Internal FLASH" in UTF-16LE */
+static const uint8_t Usb_Dfu_String_IntfFlash[] = {
     30, 0x03,
     'I', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'n', 0, 'a', 0, 'l', 0, ' ', 0,
     'F', 0, 'L', 0, 'A', 0, 'S', 0, 'H', 0
+};
+
+/* String Descriptor 5 (Interface 1) - "Internal EEPROM" in UTF-16LE */
+static const uint8_t Usb_Dfu_String_IntfEeprom[] = {
+    32, 0x03,
+    'I', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'n', 0, 'a', 0, 'l', 0, ' ', 0,
+    'E', 0, 'E', 0, 'P', 0, 'R', 0, 'O', 0, 'M', 0
 };
 
 static const uint8_t * const Usb_Dfu_Strings[] = {
@@ -175,11 +193,21 @@ static const uint8_t * const Usb_Dfu_Strings[] = {
     Usb_Dfu_String_Manuf,
     Usb_Dfu_String_Prod,
     Usb_Dfu_String_Serial,
-    Usb_Dfu_String_Interface,
+    Usb_Dfu_String_IntfFlash,
+    Usb_Dfu_String_IntfEeprom,
 };
+
+static uint32_t get_mem_base(void) {
+    return (dfu_alt == 0) ? MEM_APP_START : MEM_FLASH_START;
+}
+
+static uint32_t get_mem_limit(void) {
+    return (dfu_alt == 0) ? (MEM_FLASH_START + MEM_FLASH_SIZE) : (MEM_FLASH_START + MEM_INFO_SIZE);
+}
 
 /* Helper function to program the received buffer to internal flash */
 static void write_buffer_to_flash(uint32_t address, const uint8_t *buffer, uint32_t length) {
+    EEPROM_Mem_Bank bank = (dfu_alt == 0) ? EEPROM_Main_Bank_Select : EEPROM_Info_Bank_Select;
     for (uint32_t i = 0; i < length; i += 4) {
         uint32_t word = 0xFFFFFFFF;
         uint32_t bytes_to_copy = (length - i >= 4) ? 4 : (length - i);
@@ -189,10 +217,10 @@ static void write_buffer_to_flash(uint32_t address, const uint8_t *buffer, uint3
 
         /* Erase page if the address is aligned to the page boundary */
         if ((address & (MEM_PAGE_SIZE - 1)) == 0) {
-            flash_erase_page(address);
+            flash_erase_page(address, bank);
         }
 
-        flash_write_word(address, word);
+        flash_write_word(address, word, bank);
         address += 4;
     }
 }
@@ -202,7 +230,7 @@ static USB_Result DFU_OnDataReceived(USB_EP_TypeDef EPx, uint8_t* Buffer, uint32
     (void)Buffer;
 
     if (Length > 0) {
-        if (dfu_address < MEM_APP_START || (dfu_address + Length) > (MEM_FLASH_START + MEM_FLASH_SIZE)) {
+        if (dfu_address < get_mem_base() || (dfu_address + Length) > get_mem_limit()) {
             dfu_status = DFU_STATUS_ERR_ADDRESS;
             dfu_state = STATE_DFU_ERROR;
             return USB_ERROR;
@@ -218,7 +246,7 @@ static USB_Result DFU_OnDataReceived(USB_EP_TypeDef EPx, uint8_t* Buffer, uint32
 void USB_DFU_Init(void) {
     dfu_state = STATE_DFU_IDLE;
     dfu_status = DFU_STATUS_OK;
-    dfu_address = MEM_APP_START;
+    dfu_address = get_mem_base();
     dfu_reset_pending = 0;
 }
 
@@ -231,7 +259,7 @@ USB_Result USB_DFU_Reset(void) {
     if (result == USB_SUCCESS) {
         dfu_state = STATE_DFU_IDLE;
         dfu_status = DFU_STATUS_OK;
-        dfu_address = MEM_APP_START;
+        dfu_address = get_mem_base();
     }
     return result;
 }
@@ -239,6 +267,20 @@ USB_Result USB_DFU_Reset(void) {
 USB_Result USB_DFU_SetConfiguration(uint16_t wValue) {
     (void)wValue;
     return USB_SUCCESS;
+}
+
+USB_Result USB_DFU_SetInterface(uint16_t wValue, uint16_t wIndex) {
+    if (wIndex == 0 && wValue <= 1) {
+        dfu_alt = (uint8_t)wValue;
+        dfu_address = get_mem_base();
+        return USB_SUCCESS;
+    }
+    return USB_ERROR;
+}
+
+uint8_t USB_DFU_GetInterface(uint16_t wIndex) {
+    (void)wIndex;
+    return dfu_alt;
 }
 
 USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLENGTH) {
@@ -290,6 +332,54 @@ USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLEN
     return result;
 }
 
+static USB_Result on_set_address(USB_EP_TypeDef EPx, uint8_t* Buffer, uint32_t Length) {
+    (void)EPx; (void)Buffer; (void)Length;
+    USB_SetSA(USB_DeviceContext.Address);
+    USB_DeviceContext.USB_DeviceState = USB_DeviceContext.Address ? USB_DEV_STATE_ADDRESS : USB_DEV_STATE_DEFAULT;
+    return USB_SUCCESS;
+}
+
+USB_Result USB_DFU_SetupPacket(USB_EP_TypeDef EPx, const USB_SetupPacket_TypeDef* p) {
+    uint8_t reqType = p->mRequestTypeData & 0x60;
+    if (reqType == 0x00) { /* Standard USB request */
+        switch (p->bRequest) {
+            case USB_GET_DESCRIPTOR:
+                return USB_DFU_GetDescriptor(p->wValue, p->wIndex, p->wLength);
+            case USB_SET_ADDRESS:
+                USB_DeviceContext.Address = p->wValue;
+                return USB_EP_doDataIn(EPx, 0, 0, on_set_address);
+            case USB_SET_CONFIGURATION:
+                USB_DeviceContext.USB_DeviceState = USB_DEV_STATE_CONFIGURED;
+                return USB_EP_doDataIn(EPx, 0, 0, 0);
+            case USB_GET_CONFIGURATION: {
+                static uint8_t cfg = 1;
+                return USB_EP_doDataIn(EPx, &cfg, 1, USB_DeviceDoStatusOutAck);
+            }
+            case USB_SET_INTERFACE:
+                if (USB_DFU_SetInterface(p->wValue, p->wIndex) == USB_SUCCESS) {
+                    return USB_EP_doDataIn(EPx, 0, 0, 0);
+                }
+                return USB_EP_Stall(EPx, USB_STALL_PROTO);
+            case USB_GET_INTERFACE: {
+                static uint8_t alt;
+                alt = USB_DFU_GetInterface(p->wIndex);
+                return USB_EP_doDataIn(EPx, &alt, 1, USB_DeviceDoStatusOutAck);
+            }
+            case USB_GET_STATUS: {
+                static uint16_t status = 0;
+                return USB_EP_doDataIn(EPx, (uint8_t *)&status, 2, USB_DeviceDoStatusOutAck);
+            }
+            default:
+                return USB_EP_doDataIn(EPx, 0, 0, 0);
+        }
+    } else if (reqType == 0x20) { /* Class request (DFU) */
+        return USB_DFU_ClassRequest();
+    } else if (reqType == 0x40) { /* Vendor request (MS OS 2.0) */
+        return USB_DFU_VendorRequest();
+    }
+    return USB_EP_Stall(EPx, USB_STALL_PROTO);
+}
+
 USB_Result USB_DFU_VendorRequest(void) {
     USB_RequestTypeDT_TypeDef dir = (USB_RequestTypeDT_TypeDef)(USB_CurrentSetupPacket.mRequestTypeData & USB_REQUEST_DT_Msk);
     if (dir == USB_DEVICE_TO_HOST) {
@@ -320,8 +410,8 @@ USB_Result USB_DFU_ClassRequest(void) {
         case DFU_DNLOAD:
             if (wLength > 0) {
                 if (wLength > DFU_TRANSFER_SIZE ||
-                    dfu_address < MEM_APP_START ||
-                    (dfu_address + wLength) > (MEM_FLASH_START + MEM_FLASH_SIZE)) {
+                    dfu_address < get_mem_base() ||
+                    (dfu_address + wLength) > get_mem_limit()) {
                     dfu_status = DFU_STATUS_ERR_ADDRESS;
                     dfu_state = STATE_DFU_ERROR;
                     result = USB_ERROR;
@@ -339,18 +429,20 @@ USB_Result USB_DFU_ClassRequest(void) {
 
         case DFU_UPLOAD:
             if (dfu_state == STATE_DFU_IDLE) {
-                dfu_address = MEM_APP_START;
+                dfu_address = get_mem_base();
             }
-            if (dfu_address >= (MEM_FLASH_START + MEM_FLASH_SIZE)) {
+            if (dfu_address >= get_mem_limit()) {
                 /* Finished: send ZLP to terminate upload */
                 dfu_state = STATE_DFU_IDLE;
                 result = USB_EP_doDataIn(USB_EP0, 0, 0, USB_DeviceDoStatusOutAck);
             } else {
-                uint32_t chunk = (MEM_FLASH_START + MEM_FLASH_SIZE) - dfu_address;
+                uint32_t chunk = get_mem_limit() - dfu_address;
                 if (chunk > wLength) {
                     chunk = wLength;
                 }
-                result = USB_EP_doDataIn(USB_EP0, (uint8_t *)dfu_address, chunk, USB_DeviceDoStatusOutAck);
+                EEPROM_Mem_Bank bank = (dfu_alt == 0) ? EEPROM_Main_Bank_Select : EEPROM_Info_Bank_Select;
+                flash_read_block(dfu_address, dfu_rx_buffer, chunk, bank);
+                result = USB_EP_doDataIn(USB_EP0, dfu_rx_buffer, chunk, USB_DeviceDoStatusOutAck);
                 dfu_address += chunk;
                 dfu_state = (chunk < wLength) ? STATE_DFU_IDLE : STATE_DFU_UPLOAD_IDLE;
             }
@@ -378,7 +470,7 @@ USB_Result USB_DFU_ClassRequest(void) {
         case DFU_CLRSTATUS:
             dfu_status = DFU_STATUS_OK;
             dfu_state = STATE_DFU_IDLE;
-            dfu_address = MEM_APP_START;
+            dfu_address = get_mem_base();
             /* Send status handshake */
             result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
             break;
@@ -391,7 +483,7 @@ USB_Result USB_DFU_ClassRequest(void) {
         case DFU_ABORT:
             dfu_state = STATE_DFU_IDLE;
             dfu_status = DFU_STATUS_OK;
-            dfu_address = MEM_APP_START;
+            dfu_address = get_mem_base();
             result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
             break;
 

@@ -14,9 +14,9 @@ void flash_init(void) {
  * Erase a page of the flash memory.
  * For Milandr, this function must be in RAM to avoid read-while-write hazards.
  */
-__RAMFUNC __attribute__((noinline)) void flash_erase_page(uint32_t address) {
+__RAMFUNC __attribute__((noinline)) void flash_erase_page(uint32_t address, EEPROM_Mem_Bank bank) {
     __disable_irq();
-    EEPROM_ErasePage(address, EEPROM_Main_Bank_Select);
+    EEPROM_ErasePage(address, bank);
     EEPROM_UpdateDCache();
     __enable_irq();
 }
@@ -25,9 +25,23 @@ __RAMFUNC __attribute__((noinline)) void flash_erase_page(uint32_t address) {
  * Write a 32-bit word to flash.
  * For Milandr, this function must be in RAM to avoid read-while-write hazards.
  */
-__RAMFUNC __attribute__((noinline)) void flash_write_word(uint32_t address, uint32_t data) {
+__RAMFUNC __attribute__((noinline)) void flash_write_word(uint32_t address, uint32_t data, EEPROM_Mem_Bank bank) {
     __disable_irq();
-    EEPROM_ProgramWord(address, EEPROM_Main_Bank_Select, data);
+    EEPROM_ProgramWord(address, bank, data);
     EEPROM_UpdateDCache();
     __enable_irq();
+}
+
+__RAMFUNC __attribute__((noinline)) void flash_read_block(uint32_t address, uint8_t *buffer, uint32_t length, EEPROM_Mem_Bank bank) {
+    if (bank == EEPROM_Main_Bank_Select) {
+        const uint8_t *src = (const uint8_t *)address;
+        for (uint32_t i = 0; i < length; i++) {
+            buffer[i] = src[i];
+        }
+    } else {
+        const uint8_t *src = (const uint8_t *)(address & 0x0FFF);
+        for (uint32_t i = 0; i < length; i++) {
+            buffer[i] = src[i];
+        }
+    }
 }
