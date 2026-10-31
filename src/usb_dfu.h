@@ -49,6 +49,7 @@ void USB_DFU_Init(void);
 USB_Result USB_DFU_Reset(void);
 USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLENGTH);
 USB_Result USB_DFU_ClassRequest(void);
+USB_Result USB_DFU_VendorRequest(void);
 USB_Result USB_DFU_SetConfiguration(uint16_t wValue);
 uint8_t USB_DFU_GetState(void);
 

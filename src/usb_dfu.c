@@ -11,11 +11,18 @@ volatile uint8_t dfu_reset_pending = 0;
 static uint8_t  dfu_rx_buffer[DFU_TRANSFER_SIZE];
 static uint16_t dfu_rx_len = 0;
 
+#define USB_BOS_DESCRIPTOR_TYPE                 0x0F
+#define USB_DEVICE_CAPABILITY_TYPE              0x10
+#define DESCR_SIZE_BOS_DESC                     33
+#define DESCR_SIZE_MS_OS_20_DESC                162
+#define USB_BOS                                 0x0F
+#define MS_OS_20_VENDOR_CODE                    0x02
+
 /* Standard Device Descriptor */
 static const uint8_t Usb_Dfu_Device_Descriptor[18] = {
     0x12,                  /* bLength */
     0x01,                  /* bDescriptorType (Device) */
-    0x00, 0x02,            /* bcdUSB (2.0) */
+    0x10, 0x02,            /* bcdUSB (2.10 for BOS and MS OS 2.0 support) */
     0x00,                  /* bDeviceClass (Defined at interface level) */
     0x00,                  /* bDeviceSubClass */
     0x00,                  /* bDeviceProtocol */
@@ -30,6 +37,70 @@ static const uint8_t Usb_Dfu_Device_Descriptor[18] = {
     0x02,                  /* iProduct (String 2) */
     0x03,                  /* iSerialNumber (String 3) */
     0x01                   /* bNumConfigurations */
+};
+
+/* BOS Descriptor */
+static const uint8_t Usb_Dfu_Bos_Descriptor[DESCR_SIZE_BOS_DESC] = {
+    /* BOS Header (5 bytes) */
+    0x05,                               /* bLength */
+    USB_BOS_DESCRIPTOR_TYPE,            /* bDescriptorType */
+    (uint8_t)(DESCR_SIZE_BOS_DESC & 0xFF),
+    (uint8_t)((DESCR_SIZE_BOS_DESC >> 8) & 0xFF), /* wTotalLength */
+    0x01,                               /* bNumDeviceCaps */
+
+    /* Device Capability: Platform (28 bytes) */
+    0x1C,                               /* bLength */
+    USB_DEVICE_CAPABILITY_TYPE,         /* bDescriptorType */
+    0x05,                               /* bDevCapabilityType = PLATFORM */
+    0x00,                               /* bReserved */
+
+    /* MS OS 2.0 Platform Capability ID: {D8DD60DF-4589-4CC7-9CD2-659D9E648A9F} */
+    0xDF, 0x60, 0xDD, 0xD8, 0x89, 0x45, 0xC7, 0x4C,
+    0x9C, 0xD2, 0x65, 0x9D, 0x9E, 0x64, 0x8A, 0x9F,
+
+    /* dwWindowsVersion: Windows 8.1+ / 10 / 11 (0x06030000) */
+    0x00, 0x00, 0x03, 0x06,
+
+    /* wMSOSDescriptorSetTotalLength */
+    (uint8_t)(DESCR_SIZE_MS_OS_20_DESC & 0xFF),
+    (uint8_t)((DESCR_SIZE_MS_OS_20_DESC >> 8) & 0xFF),
+
+    MS_OS_20_VENDOR_CODE,               /* bMS_VendorCode */
+    0x00                                /* bAltEnumCode */
+};
+
+/* Microsoft OS 2.0 Descriptor Set (Auto WinUSB bind) */
+static const uint8_t Usb_Dfu_Ms_Os_20_Descriptor[DESCR_SIZE_MS_OS_20_DESC] = {
+    /* 1. MS OS 2.0 Descriptor Set Header (10 bytes) */
+    0x0A, 0x00,                         /* wLength: 10 bytes */
+    0x00, 0x00,                         /* wDescriptorType: Set Header */
+    0x00, 0x00, 0x03, 0x06,             /* dwWindowsVersion: 0x06030000 */
+    (uint8_t)(DESCR_SIZE_MS_OS_20_DESC & 0xFF),
+    (uint8_t)((DESCR_SIZE_MS_OS_20_DESC >> 8) & 0xFF), /* wTotalLength */
+
+    /* 2. Compatible ID Descriptor (20 bytes) */
+    0x14, 0x00,                         /* wLength: 20 bytes */
+    0x03, 0x00,                         /* wDescriptorType: Compatible ID */
+    'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,       /* CompatibleID: "WINUSB" */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* SubCompatibleID */
+
+    /* 3. Registry Property Descriptor (132 bytes) */
+    0x84, 0x00,                         /* wLength: 132 bytes */
+    0x04, 0x00,                         /* wDescriptorType: Registry Property */
+    0x07, 0x00,                         /* wPropertyDataType: REG_MULTI_SZ */
+    0x2A, 0x00,                         /* wPropertyNameLength: 42 bytes */
+
+    /* "DeviceInterfaceGUIDs\0" in UTF-16LE */
+    'D',0,'e',0,'v',0,'i',0,'c',0,'e',0,'I',0,'n',0,'t',0,'e',0,'r',0,'f',0,'a',0,'c',0,'e',0,'G',0,'U',0,'I',0,'D',0,'s',0, 0,0,
+
+    0x50, 0x00,                         /* wPropertyDataLength: 80 bytes */
+
+    /* "{fe1a73a0-4764-471a-a2f1-98e321c97a75}\0\0" in UTF-16LE */
+    '{',0,'f',0,'e',0,'1',0,'a',0,'7',0,'3',0,'a',0,'0',0,'-',0,
+    '4',0,'7',0,'6',0,'4',0,'-',0,'4',0,'7',0,'1',0,'a',0,'-',0,
+    'a',0,'2',0,'f',0,'1',0,'-',0,'9',0,'8',0,'e',0,'3',0,'2',0,
+    '1',0,'c',0,'9',0,'7',0,'a',0,'7',0,'5',0,'}',0,
+    0,0, 0,0
 };
 
 /* Configuration Descriptor (Config + Interface + DFU Functional) */
@@ -58,7 +129,7 @@ static const uint8_t Usb_Dfu_Config_Descriptor[27] = {
     /* DFU Functional Descriptor (9 bytes) */
     0x09,                  /* bLength */
     0x21,                  /* bDescriptorType (DFU Functional) */
-    0x09,                  /* bmAttributes (Can download, Will detach) */
+    0x0B,                  /* bmAttributes (Can download, Can upload, Will detach) */
     0xFF, 0x00,            /* wDetachTimeout (255 ms) */
     (uint8_t)(DFU_TRANSFER_SIZE & 0xFF),
     (uint8_t)((DFU_TRANSFER_SIZE >> 8) & 0xFF), /* wTransferSize */
@@ -92,12 +163,11 @@ static const uint8_t Usb_Dfu_String_Serial[] = {
     'M', 0, 'D', 0, 'R', 0, '3', 0, '2', 0, '-', 0, 'D', 0, 'F', 0, 'U', 0
 };
 
-/* String Descriptor 4 (Interface) - "Milandr DFU Interface" in UTF-16LE */
+/* String Descriptor 4 (Interface) - "Internal FLASH" in UTF-16LE */
 static const uint8_t Usb_Dfu_String_Interface[] = {
-    44, 0x03,
-    'M', 0, 'i', 0, 'l', 0, 'a', 0, 'n', 0, 'd', 0, 'r', 0, ' ', 0,
-    'D', 0, 'F', 0, 'U', 0, ' ', 0,
-    'I', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0
+    30, 0x03,
+    'I', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'n', 0, 'a', 0, 'l', 0, ' ', 0,
+    'F', 0, 'L', 0, 'A', 0, 'S', 0, 'H', 0
 };
 
 static const uint8_t * const Usb_Dfu_Strings[] = {
@@ -191,6 +261,11 @@ USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLEN
             length = sizeof(Usb_Dfu_Config_Descriptor);
             break;
 
+        case USB_BOS:
+            pDescr = Usb_Dfu_Bos_Descriptor;
+            length = sizeof(Usb_Dfu_Bos_Descriptor);
+            break;
+
         case USB_STRING:
             if (descIndex < sizeof(Usb_Dfu_Strings) / sizeof(Usb_Dfu_Strings[0])) {
                 pDescr = Usb_Dfu_Strings[descIndex];
@@ -213,6 +288,21 @@ USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLEN
     }
 
     return result;
+}
+
+USB_Result USB_DFU_VendorRequest(void) {
+    USB_RequestTypeDT_TypeDef dir = (USB_RequestTypeDT_TypeDef)(USB_CurrentSetupPacket.mRequestTypeData & USB_REQUEST_DT_Msk);
+    if (dir == USB_DEVICE_TO_HOST) {
+        if (USB_CurrentSetupPacket.bRequest == MS_OS_20_VENDOR_CODE &&
+            USB_CurrentSetupPacket.wIndex == 0x0007) {
+            uint32_t len = sizeof(Usb_Dfu_Ms_Os_20_Descriptor);
+            if (len > USB_CurrentSetupPacket.wLength) {
+                len = USB_CurrentSetupPacket.wLength;
+            }
+            return USB_EP_doDataIn(USB_EP0, (uint8_t *)Usb_Dfu_Ms_Os_20_Descriptor, len, USB_DeviceDoStatusOutAck);
+        }
+    }
+    return USB_ERROR;
 }
 
 USB_Result USB_DFU_ClassRequest(void) {
@@ -244,6 +334,25 @@ USB_Result USB_DFU_ClassRequest(void) {
                 dfu_state = STATE_DFU_MANIFEST_SYNC;
                 /* Send ZLP for status stage */
                 result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
+            }
+            break;
+
+        case DFU_UPLOAD:
+            if (dfu_state == STATE_DFU_IDLE) {
+                dfu_address = MEM_APP_START;
+            }
+            if (dfu_address >= (MEM_FLASH_START + MEM_FLASH_SIZE)) {
+                /* Finished: send ZLP to terminate upload */
+                dfu_state = STATE_DFU_IDLE;
+                result = USB_EP_doDataIn(USB_EP0, 0, 0, USB_DeviceDoStatusOutAck);
+            } else {
+                uint32_t chunk = (MEM_FLASH_START + MEM_FLASH_SIZE) - dfu_address;
+                if (chunk > wLength) {
+                    chunk = wLength;
+                }
+                result = USB_EP_doDataIn(USB_EP0, (uint8_t *)dfu_address, chunk, USB_DeviceDoStatusOutAck);
+                dfu_address += chunk;
+                dfu_state = (chunk < wLength) ? STATE_DFU_IDLE : STATE_DFU_UPLOAD_IDLE;
             }
             break;
 

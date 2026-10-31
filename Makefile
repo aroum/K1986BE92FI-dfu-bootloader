@@ -55,7 +55,7 @@ CFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -Wextra \
 ASFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -MMD -MP
 
 # Linker flags
-LDFLAGS = $(MCU) -flto -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
+LDFLAGS = $(MCU) -flto -nostartfiles -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections \
           -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 
