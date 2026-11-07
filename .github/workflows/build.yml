@@ -14,10 +14,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Arm Toolchain and CMake
+    - name: Install Arm GNU Toolchain (pinned, same as the Windows job)
+      uses: carlosperate/arm-none-eabi-gcc-action@v1
+      with:
+        release: '13.2.Rel1'
+
+    - name: Install CMake
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-arm-none-eabi cmake build-essential
+        sudo apt-get install -y cmake build-essential
 
     - name: Build Bootloader
       run: |
@@ -34,6 +39,13 @@ jobs:
         make clean-all
         make
         make blink
+
+    - name: Check bootloader size (must fit one 4 KB page)
+      run: |
+        arm-none-eabi-size build/milandr_dfu_bootloader.elf || true
+        size=$(wc -c < build/milandr_dfu_bootloader.bin)
+        echo "bootloader.bin = $size bytes (limit 4096)"
+        test "$size" -le 4096
 
     - name: Upload Bootloader Artifacts
       uses: actions/upload-artifact@v4

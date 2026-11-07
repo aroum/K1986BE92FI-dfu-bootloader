@@ -19,6 +19,10 @@ jobs:
 
       - name: Install Arm GNU Toolchain
         uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          # Pin the toolchain: the bootloader has only a few bytes of headroom
+          # and code size changes between GCC releases. Use the same version locally.
+          release: '13.2.Rel1'
 
       - name: Install Make
         run: |
@@ -33,6 +37,13 @@ jobs:
         run: |
           make clean
           make
+
+      - name: Check bootloader size (must fit one 4 KB page)
+        run: |
+          arm-none-eabi-size build/milandr_dfu_bootloader.elf
+          size=$(wc -c < build/milandr_dfu_bootloader.bin)
+          echo "bootloader.bin = $size bytes (limit 4096)"
+          test "$size" -le 4096
 
       - name: Build Blink Example (Make)
         run: |
