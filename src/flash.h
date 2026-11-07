@@ -5,8 +5,7 @@
 #include "config.h"
 #include "MDR32FxQI_eeprom.h"
 
-/* Initialize Flash controller for programming/erasing */
-void flash_init(void);
+uint32_t flash_read_info_word(uint32_t address);
 
 /* Erase a single page of flash containing the given address in the selected bank */
 void flash_erase_page(uint32_t address, EEPROM_Mem_Bank bank);

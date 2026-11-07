@@ -10,7 +10,6 @@ static uint8_t  dfu_alt = 0;
 volatile uint8_t dfu_reset_pending = 0;
 
 static uint8_t  dfu_rx_buffer[DFU_TRANSFER_SIZE];
-static uint16_t dfu_rx_len = 0;
 
 #define USB_BOS_DESCRIPTOR_TYPE                 0x0F
 #define USB_DEVICE_CAPABILITY_TYPE              0x10
@@ -205,13 +204,20 @@ static uint32_t get_mem_limit(void) {
     return (dfu_alt == 0) ? (MEM_FLASH_START + MEM_FLASH_SIZE) : (MEM_FLASH_START + MEM_INFO_SIZE);
 }
 
+/* SP/PC of the application (first two words) are held back in RAM and
+   programmed only when the download completes, so an interrupted update
+   leaves erased vectors (app_is_valid() fails) instead of a bootable
+   half-image. */
+static uint32_t held_vec[2];
+static uint8_t held_valid;
+
 /* Helper function to program the received buffer to internal flash */
-static void write_buffer_to_flash(uint32_t address, const uint8_t *buffer, uint32_t length) {
+/* Returns 0 if the data could not be written. */
+static int write_buffer_to_flash(uint32_t address, const uint8_t *buffer, uint32_t length) {
     EEPROM_Mem_Bank bank = (dfu_alt == 0) ? EEPROM_Main_Bank_Select : EEPROM_Info_Bank_Select;
     for (uint32_t i = 0; i < length; i += 4) {
         uint32_t word = 0xFFFFFFFF;
-        uint32_t bytes_to_copy = (length - i >= 4) ? 4 : (length - i);
-        for (uint32_t b = 0; b < bytes_to_copy; b++) {
+        for (uint32_t b = 0; b < 4 && i + b < length; b++) {
             ((uint8_t *)&word)[b] = buffer[i + b];
         }
 
@@ -220,8 +226,41 @@ static void write_buffer_to_flash(uint32_t address, const uint8_t *buffer, uint3
             flash_erase_page(address, bank);
         }
 
-        flash_write_word(address, word, bank);
+        if (bank == EEPROM_Main_Bank_Select && address < MEM_APP_START + 8) {
+            held_vec[(address - MEM_APP_START) >> 2] = word;
+            held_valid = 1;
+            address += 4;
+            continue;
+        }
+
+        if (bank == EEPROM_Info_Bank_Select && (address & 0xCu) == 0) {
+            /* SPL "sector 0" of the Info bank = every 4th word (address bits
+               [3:2] == 0). It is never erased and its factory-data area is
+               write-protected, so these words cannot be rewritten: accept
+               them only if they already hold the same value (a dump taken
+               with -U), otherwise fail instead of silently AND-merging. */
+            if (flash_read_info_word(address) != word) {
+                return 0;
+            }
+        } else {
+            flash_write_word(address, word, bank);
+            uint32_t got = (bank == EEPROM_Main_Bank_Select)
+                               ? *(volatile uint32_t *)address
+                               : flash_read_info_word(address);
+            if (got != word) {
+                return 0;
+            }
+        }
         address += 4;
+    }
+    return 1;
+}
+
+static void commit_held_vectors(void) {
+    if (held_valid) {
+        flash_write_word(MEM_APP_START, held_vec[0], EEPROM_Main_Bank_Select);
+        flash_write_word(MEM_APP_START + 4, held_vec[1], EEPROM_Main_Bank_Select);
+        held_valid = 0;
     }
 }
 
@@ -235,7 +274,14 @@ static USB_Result DFU_OnDataReceived(USB_EP_TypeDef EPx, uint8_t* Buffer, uint32
             dfu_state = STATE_DFU_ERROR;
             return USB_ERROR;
         }
-        write_buffer_to_flash(dfu_address, dfu_rx_buffer, Length);
+        if (dfu_address == get_mem_base()) {
+            held_valid = 0;     /* a new download starts */
+        }
+        if (!write_buffer_to_flash(dfu_address, dfu_rx_buffer, Length)) {
+            dfu_status = DFU_STATUS_ERR_WRITE;
+            dfu_state = STATE_DFU_ERROR;
+            return USB_ERROR;
+        }
         dfu_address += Length;
     }
 
@@ -248,6 +294,7 @@ void USB_DFU_Init(void) {
     dfu_status = DFU_STATUS_OK;
     dfu_address = get_mem_base();
     dfu_reset_pending = 0;
+    held_valid = 0;
 }
 
 USB_Result USB_DFU_Reset(void) {
@@ -257,79 +304,40 @@ USB_Result USB_DFU_Reset(void) {
 
     USB_Result result = USB_DeviceReset();
     if (result == USB_SUCCESS) {
+        USB_EP_Init(USB_EP0, USB_SEPx_CTRL_EPEN_Enable | USB_SEPx_CTRL_EPDATASEQ_Data1, 0);
+        USB_EP_setSetupHandler(USB_EP0, &USB_CurrentSetupPacket, USB_DFU_SetupPacket);
         dfu_state = STATE_DFU_IDLE;
         dfu_status = DFU_STATUS_OK;
         dfu_address = get_mem_base();
+        held_valid = 0;
     }
     return result;
 }
 
-USB_Result USB_DFU_SetConfiguration(uint16_t wValue) {
-    (void)wValue;
-    return USB_SUCCESS;
-}
-
-USB_Result USB_DFU_SetInterface(uint16_t wValue, uint16_t wIndex) {
-    if (wIndex == 0 && wValue <= 1) {
-        dfu_alt = (uint8_t)wValue;
-        dfu_address = get_mem_base();
-        return USB_SUCCESS;
-    }
-    return USB_ERROR;
-}
-
-uint8_t USB_DFU_GetInterface(uint16_t wIndex) {
-    (void)wIndex;
-    return dfu_alt;
-}
-
 USB_Result USB_DFU_GetDescriptor(uint16_t wVALUE, uint16_t wINDEX, uint16_t wLENGTH) {
-    const uint8_t* pDescr = 0;
-    uint32_t length = 0;
-    USB_Result result = USB_SUCCESS;
+    const uint8_t* pDescr;
+    uint32_t length;
     uint8_t descType = (uint8_t)(wVALUE >> 8);
     uint8_t descIndex = (uint8_t)(wVALUE & 0xFF);
-
     (void)wINDEX;
 
     switch (descType) {
-        case USB_DEVICE:
-            pDescr = Usb_Dfu_Device_Descriptor;
-            length = sizeof(Usb_Dfu_Device_Descriptor);
-            break;
-
-        case USB_CONFIGURATION:
-            pDescr = Usb_Dfu_Config_Descriptor;
-            length = sizeof(Usb_Dfu_Config_Descriptor);
-            break;
-
-        case USB_BOS:
-            pDescr = Usb_Dfu_Bos_Descriptor;
-            length = sizeof(Usb_Dfu_Bos_Descriptor);
-            break;
-
+        case USB_DEVICE:        pDescr = Usb_Dfu_Device_Descriptor; length = sizeof(Usb_Dfu_Device_Descriptor); break;
+        case USB_CONFIGURATION: pDescr = Usb_Dfu_Config_Descriptor; length = sizeof(Usb_Dfu_Config_Descriptor); break;
+        case USB_BOS:           pDescr = Usb_Dfu_Bos_Descriptor;    length = sizeof(Usb_Dfu_Bos_Descriptor); break;
         case USB_STRING:
             if (descIndex < sizeof(Usb_Dfu_Strings) / sizeof(Usb_Dfu_Strings[0])) {
                 pDescr = Usb_Dfu_Strings[descIndex];
                 length = pDescr[0];
-            } else {
-                result = USB_ERROR;
+                break;
             }
-            break;
-
+            /* fall through */
         default:
-            result = USB_ERROR;
-            break;
+            return USB_ERROR;
     }
 
-    if (result == USB_SUCCESS && pDescr != 0) {
-        if (length > wLENGTH) {
-            length = wLENGTH;
-        }
-        result = USB_EP_doDataIn(USB_EP0, (uint8_t*)pDescr, length, USB_DeviceDoStatusOutAck);
-    }
-
-    return result;
+    if (length > wLENGTH) length = wLENGTH;
+    return USB_EP_doDataIn(USB_EP0, (uint8_t*)pDescr, length, USB_DeviceDoStatusOutAck);
 }
 
 static USB_Result on_set_address(USB_EP_TypeDef EPx, uint8_t* Buffer, uint32_t Length) {
@@ -356,15 +364,14 @@ USB_Result USB_DFU_SetupPacket(USB_EP_TypeDef EPx, const USB_SetupPacket_TypeDef
                 return USB_EP_doDataIn(EPx, &cfg, 1, USB_DeviceDoStatusOutAck);
             }
             case USB_SET_INTERFACE:
-                if (USB_DFU_SetInterface(p->wValue, p->wIndex) == USB_SUCCESS) {
+                if (p->wIndex == 0 && p->wValue <= 1) {
+                    dfu_alt = (uint8_t)p->wValue;
+                    dfu_address = get_mem_base();
                     return USB_EP_doDataIn(EPx, 0, 0, 0);
                 }
                 return USB_EP_Stall(EPx, USB_STALL_PROTO);
-            case USB_GET_INTERFACE: {
-                static uint8_t alt;
-                alt = USB_DFU_GetInterface(p->wIndex);
-                return USB_EP_doDataIn(EPx, &alt, 1, USB_DeviceDoStatusOutAck);
-            }
+            case USB_GET_INTERFACE:
+                return USB_EP_doDataIn(EPx, &dfu_alt, 1, USB_DeviceDoStatusOutAck);
             case USB_GET_STATUS: {
                 static uint16_t status = 0;
                 return USB_EP_doDataIn(EPx, (uint8_t *)&status, 2, USB_DeviceDoStatusOutAck);
@@ -375,24 +382,14 @@ USB_Result USB_DFU_SetupPacket(USB_EP_TypeDef EPx, const USB_SetupPacket_TypeDef
     } else if (reqType == 0x20) { /* Class request (DFU) */
         return USB_DFU_ClassRequest();
     } else if (reqType == 0x40) { /* Vendor request (MS OS 2.0) */
-        return USB_DFU_VendorRequest();
-    }
-    return USB_EP_Stall(EPx, USB_STALL_PROTO);
-}
-
-USB_Result USB_DFU_VendorRequest(void) {
-    USB_RequestTypeDT_TypeDef dir = (USB_RequestTypeDT_TypeDef)(USB_CurrentSetupPacket.mRequestTypeData & USB_REQUEST_DT_Msk);
-    if (dir == USB_DEVICE_TO_HOST) {
-        if (USB_CurrentSetupPacket.bRequest == MS_OS_20_VENDOR_CODE &&
-            USB_CurrentSetupPacket.wIndex == 0x0007) {
+        if ((p->mRequestTypeData & USB_REQUEST_DT_Msk) == USB_DEVICE_TO_HOST &&
+            p->bRequest == MS_OS_20_VENDOR_CODE && p->wIndex == 0x0007) {
             uint32_t len = sizeof(Usb_Dfu_Ms_Os_20_Descriptor);
-            if (len > USB_CurrentSetupPacket.wLength) {
-                len = USB_CurrentSetupPacket.wLength;
-            }
+            if (len > p->wLength) len = p->wLength;
             return USB_EP_doDataIn(USB_EP0, (uint8_t *)Usb_Dfu_Ms_Os_20_Descriptor, len, USB_DeviceDoStatusOutAck);
         }
     }
-    return USB_ERROR;
+    return USB_EP_Stall(EPx, USB_STALL_PROTO);
 }
 
 USB_Result USB_DFU_ClassRequest(void) {
@@ -402,12 +399,16 @@ USB_Result USB_DFU_ClassRequest(void) {
 
     switch (USB_CurrentSetupPacket.bRequest) {
         case DFU_DETACH:
-            dfu_reset_pending = 1;
-            /* Send ZLP acknowledge */
             result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
             break;
 
         case DFU_DNLOAD:
+            if (dfu_state != STATE_DFU_IDLE && dfu_state != STATE_DFU_DNLOAD_IDLE) {
+                return USB_ERROR;
+            }
+            if (dfu_state == STATE_DFU_IDLE) {
+                dfu_address = get_mem_base();
+            }
             if (wLength > 0) {
                 if (wLength > DFU_TRANSFER_SIZE ||
                     dfu_address < get_mem_base() ||
@@ -416,32 +417,33 @@ USB_Result USB_DFU_ClassRequest(void) {
                     dfu_state = STATE_DFU_ERROR;
                     result = USB_ERROR;
                 } else {
-                    dfu_rx_len = wLength;
                     result = USB_EP_doDataOut(USB_EP0, dfu_rx_buffer, wLength, DFU_OnDataReceived);
                 }
             } else {
-                /* End of download, enter manifestation sync */
+                if (dfu_state == STATE_DFU_DNLOAD_IDLE) {
+                    commit_held_vectors();
+                }
                 dfu_state = STATE_DFU_MANIFEST_SYNC;
-                /* Send ZLP for status stage */
                 result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
             }
             break;
 
         case DFU_UPLOAD:
+            if (dfu_state != STATE_DFU_IDLE && dfu_state != STATE_DFU_UPLOAD_IDLE) {
+                return USB_ERROR;
+            }
+            if (wLength > DFU_TRANSFER_SIZE) return USB_ERROR;
             if (dfu_state == STATE_DFU_IDLE) {
                 dfu_address = get_mem_base();
             }
             if (dfu_address >= get_mem_limit()) {
-                /* Finished: send ZLP to terminate upload */
                 dfu_state = STATE_DFU_IDLE;
                 result = USB_EP_doDataIn(USB_EP0, 0, 0, USB_DeviceDoStatusOutAck);
             } else {
                 uint32_t chunk = get_mem_limit() - dfu_address;
-                if (chunk > wLength) {
-                    chunk = wLength;
-                }
-                EEPROM_Mem_Bank bank = (dfu_alt == 0) ? EEPROM_Main_Bank_Select : EEPROM_Info_Bank_Select;
-                flash_read_block(dfu_address, dfu_rx_buffer, chunk, bank);
+                if (chunk > wLength) chunk = wLength;
+                flash_read_block(dfu_address, dfu_rx_buffer, chunk,
+                                 (dfu_alt == 0) ? EEPROM_Main_Bank_Select : EEPROM_Info_Bank_Select);
                 result = USB_EP_doDataIn(USB_EP0, dfu_rx_buffer, chunk, USB_DeviceDoStatusOutAck);
                 dfu_address += chunk;
                 dfu_state = (chunk < wLength) ? STATE_DFU_IDLE : STATE_DFU_UPLOAD_IDLE;
@@ -449,29 +451,24 @@ USB_Result USB_DFU_ClassRequest(void) {
             break;
 
         case DFU_GETSTATUS:
-            /* Handle State transitions when host reads status */
             if (dfu_state == STATE_DFU_DNLOAD_SYNC) {
                 dfu_state = STATE_DFU_DNLOAD_IDLE;
             } else if (dfu_state == STATE_DFU_MANIFEST_SYNC) {
                 dfu_state = STATE_DFU_MANIFEST_WAIT_RESET;
                 dfu_reset_pending = 1;
             }
-
             status_response[0] = dfu_status;
-            status_response[1] = 0; /* Poll Timeout LSB */
-            status_response[2] = 0;
-            status_response[3] = 0; /* Poll Timeout MSB */
             status_response[4] = dfu_state;
-            status_response[5] = 0; /* iString */
-
             result = USB_EP_doDataIn(USB_EP0, status_response, 6, USB_DeviceDoStatusOutAck);
             break;
 
         case DFU_CLRSTATUS:
-            dfu_status = DFU_STATUS_OK;
-            dfu_state = STATE_DFU_IDLE;
-            dfu_address = get_mem_base();
-            /* Send status handshake */
+            if (dfu_state != STATE_DFU_ERROR) {
+                return USB_ERROR;
+            }
+            /* fall through */
+        case DFU_ABORT:
+            USB_DFU_Init();
             result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
             break;
 
@@ -480,21 +477,9 @@ USB_Result USB_DFU_ClassRequest(void) {
             result = USB_EP_doDataIn(USB_EP0, status_response, 1, USB_DeviceDoStatusOutAck);
             break;
 
-        case DFU_ABORT:
-            dfu_state = STATE_DFU_IDLE;
-            dfu_status = DFU_STATUS_OK;
-            dfu_address = get_mem_base();
-            result = USB_EP_doDataIn(USB_EP0, 0, 0, 0);
-            break;
-
         default:
             result = USB_ERROR;
             break;
     }
-
     return result;
-}
-
-uint8_t USB_DFU_GetState(void) {
-    return dfu_state;
 }
