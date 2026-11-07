@@ -3,3 +3,4 @@ build*
 .cache
 build_example
 .DS_Store
+backups/
