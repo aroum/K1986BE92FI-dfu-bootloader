@@ -107,12 +107,5 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  /DISCARD/ :
-  {
-    libc.a ( * )
-    libm.a ( * )
-    libgcc.a ( * )
-  }
-
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }

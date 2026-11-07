@@ -45,7 +45,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     -mthumb
     -Wall
     -Wextra
-    -Os
+    -Os -fno-inline-functions-called-once -fno-tree-dominator-opts
     -flto -nostartfiles
     -ffunction-sections
     -fdata-sections
@@ -54,9 +54,13 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     -Wno-deprecated
 )
 
+# This DFU device exposes only the control endpoint (see MDR32FxQI_usb_device.c)
+target_compile_definitions(${PROJECT_NAME} PRIVATE USB_DEVICE_EP0_ONLY)
+
 target_link_options(${PROJECT_NAME} PRIVATE
     -mcpu=cortex-m3
     -mthumb
+    -Os -fno-inline-functions-called-once -fno-tree-dominator-opts
     -flto -nostartfiles
     -Wl,--gc-sections
     -Wl,-Map=${PROJECT_NAME}.map

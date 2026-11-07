@@ -13,7 +13,7 @@ LDSCRIPT = MDR32F9Q2I_bootloader.ld
 
 # Optimization and CPU flags
 MCU = -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-OPT ?= -Os -flto
+OPT ?= -Os -flto -fno-inline-functions-called-once -fno-tree-dominator-opts
 
 # C sources
 C_SOURCES = \
@@ -47,7 +47,7 @@ C_INCLUDES = \
 -Iplatforms/milandr/dep/common/Drivers/SPL/inc/USB_Library
 
 # Compiler and Assembler flags
-CFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -Wextra \
+CFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -DUSB_DEVICE_EP0_ONLY -Wall -Wextra \
          -ffunction-sections -fdata-sections -fno-common -fmessage-length=0 \
          -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-deprecated \
          -MMD -MP
@@ -55,7 +55,7 @@ CFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -Wextra \
 ASFLAGS = $(MCU) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections -MMD -MP
 
 # Linker flags
-LDFLAGS = $(MCU) -flto -nostartfiles -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
+LDFLAGS = $(MCU) $(OPT) -nostartfiles -mthumb-interwork --specs=nano.specs -T$(LDSCRIPT) \
           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections \
           -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 

@@ -154,6 +154,8 @@ USB_Result USB_EP_Init(USB_EP_TypeDef EPx, uint32_t USB_EP_Ctrl, USB_EP_Error_Ha
     ep->EP_Halt                     = USB_STALL_PROTO;
     ep->EP_State                    = USB_EP_NAK;
     ep->EP_WasScdone                = RESET;
+    ep->EP_WaitOut                  = RESET;
+    ep->EP_WaitSetup                = RESET;
 
     USB_SetSEPxCTRL(EPx, USB_EP_Ctrl);
 
@@ -1182,7 +1184,9 @@ static USB_Result USB_Device_setAddressWork(USB_EP_TypeDef EPx, uint8_t* Buffer,
   */
 USB_Result USB_DeviceDispatchEvent(void)
 {
+#ifndef USB_DEVICE_EP0_ONLY
     uint32_t i;
+#endif
     uint32_t USB_IT;
     USB_Result result = USB_SUCCESS;
     static volatile uint32_t bHandling = RESET;
@@ -1205,10 +1209,15 @@ USB_Result USB_DeviceDispatchEvent(void)
             USB_SetSA(USB_DeviceContext.Address);
         }
         /* Invoke End Point dispatchers */
+#ifdef USB_DEVICE_EP0_ONLY
+        /* Control-only device (e.g. DFU): skip the unused endpoints. */
+        USB_EP_dispatchEvent(USB_EP0, USB_IT);
+#else
         for (i = USB_EP0; i < Num_USB_EndPoints; i++)
         {
             USB_EP_dispatchEvent((USB_EP_TypeDef)i, USB_IT);
         }
+#endif
         /* Clear pending bits, except for SCTDONE */
         USB_SetSIS(USB_IT & (~USB_SIS_SCTDONE_Set));
 
