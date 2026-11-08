@@ -34,7 +34,7 @@ jobs:
         chmod +x ./example_blink/build_and_flash.sh
         ./example_blink/build_and_flash.sh --clean
 
-    - name: Test Make build (Bootloader & Blink)
+    - name: Test Make build (Bootloader, Updater & Blink)
       run: |
         make clean-all
         make
@@ -55,6 +55,17 @@ jobs:
           build/milandr_dfu_bootloader.bin
           build/milandr_dfu_bootloader.hex
           build/milandr_dfu_bootloader
+        retention-days: 3
+
+    - name: Upload Bootloader Updater Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: bootloader-updater
+        path: |
+          updater/build/dfu_bootloader_updater.bin
+          updater/build/dfu_bootloader_updater.hex
+          updater/build/dfu_bootloader_updater.elf
+        retention-days: 3
 
     - name: Upload Blink Example Artifacts
       uses: actions/upload-artifact@v4
@@ -64,4 +75,5 @@ jobs:
           example_blink/build/blink.bin
           example_blink/build/blink.hex
           example_blink/build/blink
+        retention-days: 3
 

@@ -84,11 +84,14 @@ OBJECTS += $(addprefix $(BUILD_DIR)/, $(notdir $(ASM_SOURCES_S:.S=.o)))
 vpath %.S $(sort $(dir $(ASM_SOURCES_S)))
 
 # --- Targets ---
-.PHONY: all bootloader blink clean clean-all flash help
+.PHONY: all bootloader updater blink clean clean-all flash help
 
-all: bootloader
+all: bootloader updater
 
 bootloader: $(BUILD_DIR)/$(TARGET).bin $(BUILD_DIR)/$(TARGET).hex
+
+updater: bootloader
+	$(MAKE) -C updater
 
 blink:
 	$(MAKE) -C example_blink
@@ -131,6 +134,7 @@ clean:
 
 clean-all: clean
 	@$(MAKE) -C example_blink clean
+	@$(MAKE) -C updater clean
 
 help:
 	@echo "Available targets:"

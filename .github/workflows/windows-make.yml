@@ -33,9 +33,9 @@ jobs:
           arm-none-eabi-gcc --version
           make --version
 
-      - name: Build Bootloader (Make)
+      - name: Build Bootloader & Updater (Make)
         run: |
-          make clean
+          make clean-all
           make
 
       - name: Check bootloader size (must fit one 4 KB page)
@@ -53,6 +53,7 @@ jobs:
       - name: Verify artifacts
         run: |
           ls -la build/milandr_dfu_bootloader.*
+          ls -la updater/build/dfu_bootloader_updater.*
           ls -la example_blink/build/blink.*
 
       - name: Upload Bootloader Artifacts (Windows Make)
@@ -63,6 +64,17 @@ jobs:
             build/milandr_dfu_bootloader.bin
             build/milandr_dfu_bootloader.hex
             build/milandr_dfu_bootloader.elf
+          retention-days: 3
+
+      - name: Upload Bootloader Updater Artifacts (Windows Make)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootloader-updater-windows-make
+          path: |
+            updater/build/dfu_bootloader_updater.bin
+            updater/build/dfu_bootloader_updater.hex
+            updater/build/dfu_bootloader_updater.elf
+          retention-days: 3
 
       - name: Upload Blink Example Artifacts (Windows Make)
         uses: actions/upload-artifact@v4
@@ -72,3 +84,4 @@ jobs:
             example_blink/build/blink.bin
             example_blink/build/blink.hex
             example_blink/build/blink.elf
+          retention-days: 3
